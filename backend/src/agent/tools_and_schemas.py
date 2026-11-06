@@ -1,23 +1,39 @@
-from typing import List
+from typing import List, Literal
 from pydantic import BaseModel, Field
 
 
-class SearchQueryList(BaseModel):
-    query: List[str] = Field(
-        description="A list of search queries to be used for web research."
+class DecomposedQuery(BaseModel):
+
+    query: str = Field(
+        description="具体检索问题"
     )
-    rationale: str = Field(
-        description="A brief explanation of why these queries are relevant to the research topic."
+
+    route: Literal[
+        "rag",
+        "web",
+        "auto"
+    ] = Field(
+        default="auto",
+        description="选择检索来源"
     )
 
 
-class Reflection(BaseModel):
+class DecompositionPlan(BaseModel):
+
+    queries: List[DecomposedQuery]
+
+
+class NewReflection(BaseModel):
+
     is_sufficient: bool = Field(
-        description="Whether the provided summaries are sufficient to answer the user's question."
+        description="当前信息是否足够回答问题"
     )
-    knowledge_gap: str = Field(
-        description="A description of what information is missing or needs clarification."
+    key_findings: str = Field(
+        description="合并'已确认信息摘要'和'本轮新增检索结果'后，"
+                    "更新出的一份完整、自洽的摘要（替换旧摘要，不是拼接）。"
+                    "必须逐字保留原文中的引用标记(如 [xxxx-WEB-1])和具体数字/编号。"
     )
-    follow_up_queries: List[str] = Field(
-        description="A list of follow-up queries to address the knowledge gap."
+    follow_up_queries: List[DecomposedQuery] = Field(
+        default_factory=list,
+        description="不足时生成补充查询"
     )

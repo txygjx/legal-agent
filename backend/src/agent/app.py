@@ -8,13 +8,13 @@ app = FastAPI()
 
 
 def create_frontend_router(build_dir="../frontend/dist"):
-    """Creates a router to serve the React frontend.
+    """创建一个用于提供 React 前端服务的路由。
 
-    Args:
-        build_dir: Path to the React build directory relative to this file.
+        参数：
+        build_dir：相对于当前文件的 React 构建目录路径。
 
-    Returns:
-        A Starlette application serving the frontend.
+        返回值：
+        一个用于提供前端服务的 Starlette 应用程序
     """
     build_path = pathlib.Path(__file__).parent.parent.parent / build_dir
 

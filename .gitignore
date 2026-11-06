@@ -200,3 +200,10 @@ cython_debug/
 #.idea/
 
 backend/.langgraph_api
+# Local environment
+backend/.venv/
+backend/venv/
+backend/.langgraph_api/
+
+# Test outputs
+test_results_*.json

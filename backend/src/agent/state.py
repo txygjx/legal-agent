@@ -1,48 +1,33 @@
 from __future__ import annotations
-
-from dataclasses import dataclass, field
-from typing import TypedDict
-
-from langgraph.graph import add_messages
-from typing_extensions import Annotated
-
-
+from typing import List
+from typing_extensions import TypedDict, Annotated
+from langgraph.graph.message import add_messages
 import operator
 
+class SubQuery(TypedDict):
+    id: str
+    query: str
+    route: str  # "rag", "web", "auto"
 
 class OverallState(TypedDict):
     messages: Annotated[list, add_messages]
-    search_query: Annotated[list, operator.add]
-    web_research_result: Annotated[list, operator.add]
+
+    # 【完美并发合并】使用 operator.add 保证并行搜索的结果绝不丢失、绝不冲突
     sources_gathered: Annotated[list, operator.add]
-    initial_search_query_count: int
+    research_results: Annotated[list, operator.add]
+
+    # 【无缝覆盖】不需要 reducer，下一轮反思的新任务直接覆盖旧任务
+    sub_queries: List[SubQuery]
+
+    research_loop_count: int
     max_research_loops: int
-    research_loop_count: int
-    reasoning_model: str
-
-
-class ReflectionState(TypedDict):
     is_sufficient: bool
-    knowledge_gap: str
-    follow_up_queries: Annotated[list, operator.add]
-    research_loop_count: int
-    number_of_ran_queries: int
 
+    # 其他兼容参数
+    reasoning_model: str
+    initial_search_query_count: int
+    route: str
 
-class Query(TypedDict):
-    query: str
-    rationale: str
-
-
-class QueryGenerationState(TypedDict):
-    search_query: list[Query]
-
-
-class WebSearchState(TypedDict):
-    search_query: str
-    id: str
-
-
-@dataclass(kw_only=True)
-class SearchStateOutput:
-    running_summary: str = field(default=None)  # Final report
+    final_context: str
+    confirmed_findings: str   # 反思节点逐轮蒸馏出的"已确认信息摘要"，每轮整体替换
+    processed_count: int      # 记录 research_results 里已经被折叠进摘要的位置

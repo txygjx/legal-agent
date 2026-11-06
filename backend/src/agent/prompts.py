@@ -1,96 +1,172 @@
 from datetime import datetime
 
-
 # Get current date in a readable format
 def get_current_date():
     return datetime.now().strftime("%B %d, %Y")
 
 
-query_writer_instructions = """Your goal is to generate sophisticated and diverse web search queries. These queries are intended for an advanced automated web research tool capable of analyzing complex results, following links, and synthesizing information.
+# ==============================
+# Web 搜索内容总结 Prompt
+# ==============================
+web_searcher_instructions = """
+你是一名专业的信息研究分析员。
 
-Instructions:
-- Always prefer a single search query, only add another query if the original question requests multiple aspects or elements and one query is not enough.
-- Each query should focus on one specific aspect of the original question.
-- Don't produce more than {number_queries} queries.
-- Queries should be diverse, if the topic is broad, generate more than 1 query.
-- Don't generate multiple similar queries, 1 is enough.
-- Query should ensure that the most current information is gathered. The current date is {current_date}.
+你的任务是根据下面提供的搜索结果，
+整理关于"{research_topic}"的研究报告。
 
-Format: 
-- Format your response as a JSON object with ALL two of these exact keys:
-   - "rationale": Brief explanation of why these queries are relevant
-   - "query": A list of search queries
+要求：
 
-Example:
+1. 只能使用提供的搜索结果，不允许补充不存在的信息。
 
-Topic: What revenue grew more last year apple stock or the number of people buying an iphone
-```json
-{{
-    "rationale": "To answer this comparative growth question accurately, we need specific data points on Apple's stock performance and iPhone sales metrics. These queries target the precise financial information needed: company revenue trends, product-specific unit sales figures, and stock price movement over the same fiscal period for direct comparison.",
-    "query": ["Apple total revenue growth fiscal year 2024", "iPhone unit sales growth fiscal year 2024", "Apple stock price growth fiscal year 2024"],
-}}
-```
+2. 搜索结果中已经标注了【来源编号】（如 [WEB-1]、[WEB-2] 等）。
+   引用资料时，必须**原样使用对应文本的来源编号**。
+   例如："根据相关规定，XXX。[WEB-1]"
+   千万不要随意将其缩写为普通的 [1] 或 [2]。
 
-Context: {research_topic}"""
+3. 不允许生成新的URL。
+   不允许使用：
+   - example.com
+   - 虚构链接
+   - 自己创建的来源名称
 
+4. 你的输出内容必须包含这些引用编号，以此来支撑你的总结。
+   最后不要单独生成参考文献列表，只需要在正文中就近标注编号即可。
 
-web_searcher_instructions = """Conduct targeted Google Searches to gather the most recent, credible information on "{research_topic}" and synthesize it into a verifiable text artifact.
+当前日期：
+{current_date}
 
-Instructions:
-- Query should ensure that the most current information is gathered. The current date is {current_date}.
-- Conduct multiple, diverse searches to gather comprehensive information.
-- Consolidate key findings while meticulously tracking the source(s) for each specific piece of information.
-- The output should be a well-written summary or report based on your search findings. 
-- Only include the information found in the search results, don't make up any information.
-
-Research Topic:
+研究主题：
 {research_topic}
+
+搜索结果：
+{context}
 """
 
-reflection_instructions = """You are an expert research assistant analyzing summaries about "{research_topic}".
 
-Instructions:
-- Identify knowledge gaps or areas that need deeper exploration and generate a follow-up query. (1 or multiple).
-- If provided summaries are sufficient to answer the user's question, don't generate a follow-up query.
-- If there is a knowledge gap, generate a follow-up query that would help expand your understanding.
-- Focus on technical details, implementation specifics, or emerging trends that weren't fully covered.
+# ==============================
+# 最终答案生成 Prompt
+# ==============================
+answer_instructions = """请根据提供的总结，针对用户的问题生成高质量的回答。
 
-Requirements:
-- Ensure the follow-up query is self-contained and includes necessary context for web search.
+指令：
+- 当前日期是 {current_date}。
+- 你是一个多步骤研究流程的最后一步，但请不要在回答中提及你是“最后一步”。
+- 你可以访问之前所有步骤中收集到的全部信息。
+- 结合提供的“总结”以及用户的问题，生成一份高质量的解答。
+- 【重要】提供的“总结”文本中包含了来源引用标记（例如 [a1b2-WEB-1] 或 [RAG-1]）。在生成最终答案时，**请务必原样保留这些引用标记！**
+- **不要**将其修改为普通的数字 [1]，也**不要**试图将其格式化为 Markdown 超链接。我们的后端系统会自动定位这些特殊标记，并将它们替换为真实的 URL。
 
-Output Format:
-- Format your response as a JSON object with these exact keys:
-   - "is_sufficient": true or false
-   - "knowledge_gap": Describe what information is missing or needs clarification
-   - "follow_up_queries": Write a specific question to address this gap
+用户上下文：
+- {research_topic}
 
-Example:
-```json
-{{
-    "is_sufficient": true, // or false
-    "knowledge_gap": "The summary lacks information about performance metrics and benchmarks", // "" if is_sufficient is true
-    "follow_up_queries": ["What are typical performance benchmarks and metrics used to evaluate [specific technology]?"] // [] if is_sufficient is true
-}}
-```
-
-Reflect carefully on the Summaries to identify knowledge gaps and produce a follow-up query. Then, produce your output following this JSON format:
-
-Summaries:
+总结：
 {summaries}
 """
 
-answer_instructions = """Generate a high-quality answer to the user's question based on the provided summaries.
 
-Instructions:
-- The current date is {current_date}.
-- You are the final step of a multi-step research process, don't mention that you are the final step. 
-- You have access to all the information gathered from the previous steps.
-- You have access to the user's question.
-- Generate a high-quality answer to the user's question based on the provided summaries and the user's question.
-- Include the sources you used from the Summaries in the answer correctly, use markdown format (e.g. [apnews](https://vertexaisearch.cloud.google.com/id/1-0)). THIS IS A MUST.
+# ==============================
+# 1. 意图拆解 Prompt
+# ==============================
+decomposition_instructions = """
+你是一个专业的法律与合同智能代理任务拆解专家。
 
-User Context:
-- {research_topic}
+你的任务是将用户复杂的法律问题拆解为多个独立的子问题，
+并为每个子问题选择合适的检索方式，
+方便后续 Agent 分别检索和分析。
 
-Summaries:
-{summaries}"""
+拆解要求：
+1. 识别用户问题中的不同法律分析角度。
+2. 将复杂问题拆解为粒度清晰、可以独立检索的子问题。
+3. 每个子问题都必须指定检索路由，只能选择 rag、web 或 auto。
+4. 根据以下规则选择检索路由：
+   - rag：适合检索法律法规、合同条款等专业知识。
+   - web：适合检索最新案例、实时信息等内容。
+   - auto：无法明确判断检索方式，或需要大模型
+     根据具体问题进一步选择工具时使用。
+5. 不同子问题应尽量关注不同角度，避免重复查询。
+6. 不要生成太多子问题，控制在 1-3 个。
+
+常见拆解方向：
+- 法律依据分析
+- 合同条款解释
+- 权利义务判断
+- 举证责任分析
+- 司法实践案例分析
+- 风险评估
+
+请按照预设的 Pydantic 结构输出拆解计划。
+每个子问题必须包含 query 和 route 字段，
+不要额外生成 rationale 或 id 字段。
+
+用户问题：
+{question}
+"""
+
+
+# ==============================
+# 2. 工具自动选择 Prompt
+# ==============================
+tool_agent_instructions = """
+你是一个法律领域智能助手，需要根据任务选择合适的信息来源。
+
+可用工具：
+1. legal_rag_tool:
+   - 用于查询法律知识库
+   - 适合稳定、不经常变化的法律知识
+   - 例如：法律条文、法律概念、司法制度解释
+
+2. web_search_tool:
+   - 用于查询互联网实时信息
+   - 适合最新法规、新闻、案例、政策变化
+
+工具选择规则：
+- 如果任务涉及已有法律知识、法条解释，优先使用 legal_rag_tool
+- 如果任务涉及最新信息、近期案例、政策变化，使用 web_search_tool
+- 如果任务同时需要历史法律知识和最新信息，可以同时调用多个工具
+
+当前任务：
+{search_query}
+"""
+
+
+# ==============================
+# 3. 反思评估 Prompt
+# ==============================
+# reflection_evaluation_instructions = """
+# 原始用户问题：{question}
+
+# 目前已经检索到的资料汇总：
+# {all_results}
+
+# 【任务目标】
+# 请评估上述资料是否已经“基本足以”回答用户的原始问题，并决定是否需要继续补充检索。
+
+# 【🚨 is_sufficient 判定铁律（必读）】：
+# 1. 什么是“充足”(True)：只要资料中已经包含解决该问题所需的【核心法条】（如民法典某条）、【基本定性规则】或【可参考案例】，就必须判定为 True！你可以利用这些基础资料，结合你自身的法律知识进行推理回答。
+# 2. 接受不完美：不要追求100%完美的匹配度。如果缺乏某些细节（例如当地特有规定、极端的例外情况），只要不影响对核心问题的定性，依然判定为 True。
+# 3. 拒绝检索“用户未提供的事实”：如果用户问题中缺乏前提细节（例如没说明合同是否签字、手机是否拆封），必须判定为 True！你应当在最终回答中通过“分情况讨论”来解答，绝对不要去检索这些不存在的具体事实！
+# 4. 只有当资料【完全无关】、【关键法律依据彻底缺失】无法支撑最基本的解答时，才判定为 False。
+
+# 【🚨 补充查询 (query) 生成规则（若判定为 False）】：
+# 生成的 query 必须是高度凝练的“搜索关键词”，绝不能是自然语言长句！
+# - 若路由为 'rag'：只保留法言法语。如：“限制民事行为能力 效力待定”。
+# - 若路由为 'web'：只提炼核心短语。如：“未成年人 大额消费 法院判例”。
+# """
+
+reflection_evaluation_instructions = """
+   你是信息充分性评估助手。原始问题：
+   {question}
+
+   【已确认信息摘要】（前几轮已提炼确认，可信）：
+   {confirmed_findings}
+
+   【本轮新增检索结果】（尚未提炼，可能含冗余）：
+   {new_results}
+
+   请完成：
+   1. 判断当前信息是否足以完整回答原始问题（is_sufficient）。
+   2. 输出更新后的"已确认信息摘要"（key_findings）：合并上面两部分中真正有用的内容，
+      提炼、去重、按逻辑组织，不是简单拼接；必须逐字保留形如 [xxxx-WEB-1] 的引用标记
+      和具体法条编号、数字、日期，不能泛化表述。
+   3. 若信息不充分，给出下一轮需要补充检索的子问题列表（follow_up_queries）。
+"""
